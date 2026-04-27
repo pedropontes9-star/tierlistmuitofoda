@@ -125,6 +125,10 @@
   .swatch{width:24px;height:24px;border-radius:50%;border:2px solid transparent;cursor:pointer}
   .swatch.sel{border-color:#fff}
 
+  .url-ok{color:#4caf7d}
+  .url-err{color:var(--danger)}
+  .url-checking{color:var(--text2)}
+
   /* UNRANKED */
   .unranked-wrap{background:var(--surface);border-radius:var(--radius);border:1px solid var(--border);padding:16px}
   .unranked-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
@@ -201,7 +205,14 @@
         <img id="iPreview" class="img-preview"/>
       </div>
     </div>
-    <div class="field"><label>Ou cole URL</label><input type="text" id="iUrl" placeholder="https://..." oninput="onUrl()"/></div>
+    <div class="field">
+      <label>Ou cole URL</label>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="iUrl" placeholder="https://..." style="flex:1" oninput="onUrl()"/>
+        <button class="btn" onclick="validateAddUrl()" title="Verificar se a URL carrega">🔍</button>
+      </div>
+      <div id="iUrlStatus" style="font-size:11px;margin-top:4px;display:none"></div>
+    </div>
     <div class="modal-actions">
       <button class="btn" onclick="closeItemModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveItem()">Adicionar</button>
@@ -214,6 +225,37 @@
   <div class="modal">
     <div id="dImgWrap" class="detail-img-wrap"><img id="dImg" class="detail-img"/></div>
     <div class="detail-title" id="dTitle"></div>
+
+    <!-- Edit section -->
+    <div id="dEditSection" style="margin-bottom:14px;padding:12px;background:rgba(255,255,255,0.03);border-radius:10px;border:1px solid var(--border)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);font-weight:600">Editar Item</span>
+        <button class="btn" style="font-size:11px;padding:4px 10px" onclick="toggleEdit()">✏️ Editar</button>
+      </div>
+      <div id="dEditFields" style="display:none">
+        <div class="field"><label>Nome</label><input type="text" id="dEditName" placeholder="Nome do item..."/></div>
+        <div class="field">
+          <label>Imagem</label>
+          <div class="preview-row">
+            <div style="flex:1">
+              <div class="upload-zone" onclick="document.getElementById('dEditFile').click()">📁 Trocar imagem</div>
+              <input type="file" id="dEditFile" accept="image/*" style="display:none" onchange="onEditFile(event)"/>
+            </div>
+            <img id="dEditPreview" class="img-preview"/>
+          </div>
+        </div>
+        <div class="field">
+          <label>Ou cole URL</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="dEditUrl" placeholder="https://..." style="flex:1" oninput="onEditUrl()"/>
+            <button class="btn" onclick="validateUrl()" title="Verificar se a URL carrega">🔍</button>
+          </div>
+          <div id="dUrlStatus" style="font-size:11px;margin-top:4px;display:none"></div>
+        </div>
+        <button class="btn btn-primary" style="width:100%" onclick="saveEditItem()">💾 Salvar alterações</button>
+      </div>
+    </div>
+
     <div id="dRatingArea"></div>
     <div id="dFinalScore" class="final-score-box" style="display:none">
       <div class="final-score-label">Média Final</div>
@@ -416,7 +458,21 @@ function onTierRowDrop(e,id){
 function openAddItem(tierId){addingToTierId=tierId;currentImg=null;['iName','iUrl'].forEach(id=>document.getElementById(id).value='');document.getElementById('iFile').value='';document.getElementById('iPreview').className='img-preview';document.getElementById('itemModal').classList.add('open');setTimeout(()=>document.getElementById('iName').focus(),80);}
 function closeItemModal(){document.getElementById('itemModal').classList.remove('open');}
 function onFile(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{const i=new Image();i.onload=()=>{const c=document.createElement('canvas');const max=800;let w=i.width,h=i.height;if(w>max||h>max){if(w>h){h=h*max/w;w=max;}else{w=w*max/h;h=max;}}c.width=w;c.height=h;c.getContext('2d').drawImage(i,0,0,w,h);currentImg=c.toDataURL('image/jpeg',0.8);document.getElementById('iPreview').src=currentImg;document.getElementById('iPreview').className='img-preview show';};i.src=ev.target.result;};r.readAsDataURL(f);}
-function onUrl(){const u=document.getElementById('iUrl').value.trim();if(u){currentImg=u;document.getElementById('iPreview').src=u;document.getElementById('iPreview').className='img-preview show';}}
+function onUrl(){const u=document.getElementById('iUrl').value.trim();if(u){currentImg=u;document.getElementById('iPreview').src=u;document.getElementById('iPreview').className='img-preview show';}document.getElementById('iUrlStatus').style.display='none';}
+async function validateAddUrl(){
+  const u=document.getElementById('iUrl').value.trim();
+  const st=document.getElementById('iUrlStatus');
+  if(!u){st.textContent='⚠ Nenhuma URL digitada';st.className='url-err';st.style.display='block';return;}
+  if(!u.startsWith('https://')){st.textContent='⚠ Use sempre URLs com https:// para evitar bloqueios';st.className='url-err';st.style.display='block';return;}
+  st.textContent='🔍 Verificando...';st.className='url-checking';st.style.display='block';
+  try{
+    const img=new Image();
+    await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=u+'?t='+Date.now();setTimeout(rej,8000);});
+    st.textContent='✅ URL carregou com sucesso!';st.className='url-ok';
+  }catch{
+    st.textContent='❌ URL não carregou — pode ser bloqueio de rede ou certificado inválido. Prefira fazer upload direto.';st.className='url-err';
+  }
+}
 function saveItem(){
   const name=document.getElementById('iName').value.trim();if(!name)return;const l=aList();
   const item={id:uid(),name,img:currentImg||'',rating:null,ratings:{}};
@@ -477,7 +533,61 @@ function saveDetail(){
   closeDetailModal();renderMain();scheduleSave(l);
 }
 function removeCurrentItem(){closeDetailModal();removeItem(detailItemId,detailFromId);}
-function closeDetailModal(){document.getElementById('detailModal').classList.remove('open');}
+function closeDetailModal(){document.getElementById('detailModal').classList.remove('open');document.getElementById('dEditFields').style.display='none';}
+
+// ── EDIT ITEM ──
+let editImg=null;
+function toggleEdit(){
+  const fields=document.getElementById('dEditFields');
+  const open=fields.style.display==='none';
+  fields.style.display=open?'block':'none';
+  if(open){
+    const l=aList();const found=findItem(l,detailItemId);if(!found)return;
+    const item=found.item;
+    document.getElementById('dEditName').value=item.name;
+    document.getElementById('dEditUrl').value=item.img&&!item.img.startsWith('data:')?item.img:'';
+    const p=document.getElementById('dEditPreview');
+    if(item.img){p.src=item.img;p.className='img-preview show';}else{p.src='';p.className='img-preview';}
+    editImg=item.img||null;
+    document.getElementById('dUrlStatus').style.display='none';
+  }
+}
+function onEditFile(e){
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{const i=new Image();i.onload=()=>{const c=document.createElement('canvas');const max=800;let w=i.width,h=i.height;if(w>max||h>max){if(w>h){h=h*max/w;w=max;}else{w=w*max/h;h=max;}}c.width=w;c.height=h;c.getContext('2d').drawImage(i,0,0,w,h);editImg=c.toDataURL('image/jpeg',0.8);document.getElementById('dEditPreview').src=editImg;document.getElementById('dEditPreview').className='img-preview show';document.getElementById('dEditUrl').value='';};i.src=ev.target.result;};
+  r.readAsDataURL(f);
+}
+function onEditUrl(){
+  const u=document.getElementById('dEditUrl').value.trim();
+  if(u){editImg=u;document.getElementById('dEditPreview').src=u;document.getElementById('dEditPreview').className='img-preview show';}
+  document.getElementById('dUrlStatus').style.display='none';
+}
+async function validateUrl(){
+  const u=document.getElementById('dEditUrl').value.trim();
+  const st=document.getElementById('dUrlStatus');
+  if(!u){st.textContent='⚠ Nenhuma URL digitada';st.className='url-err';st.style.display='block';return;}
+  if(!u.startsWith('https://')){st.textContent='⚠ Use sempre URLs com https:// para evitar bloqueios';st.className='url-err';st.style.display='block';return;}
+  st.textContent='🔍 Verificando...';st.className='url-checking';st.style.display='block';
+  try{
+    const img=new Image();
+    await new Promise((res,rej)=>{img.onload=res;img.onerror=rej;img.src=u+'?t='+Date.now();setTimeout(rej,8000);});
+    st.textContent='✅ URL carregou com sucesso!';st.className='url-ok';
+  }catch{
+    st.textContent='❌ URL não carregou — pode ser bloqueio de rede ou certificado inválido. Prefira fazer upload direto da imagem.';st.className='url-err';
+  }
+}
+function saveEditItem(){
+  const name=document.getElementById('dEditName').value.trim();if(!name)return;
+  const l=aList();const found=findItem(l,detailItemId);if(!found)return;
+  found.item.name=name;
+  found.item.img=editImg||'';
+  document.getElementById('dTitle').textContent=name;
+  const di=document.getElementById('dImg');const dw=document.getElementById('dImgWrap');
+  if(found.item.img){di.src=found.item.img;dw.className='detail-img-wrap show';}else{dw.className='detail-img-wrap';}
+  document.getElementById('dEditFields').style.display='none';
+  renderMain();scheduleSave(l);
+}
 
 function sortTier(tier){tier.items.sort((a,b)=>(b.rating||0)-(a.rating||0));}
 
