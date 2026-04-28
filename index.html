@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TLMF - Ranking Foda</title>
+<title>TLMF - Sistema de Ranking</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230f0f13'/><rect x='1' y='1' width='5' height='4' rx='1' fill='%23E24B4A'/><rect x='7' y='1' width='24' height='4' rx='1' fill='%231e1e2a'/><rect x='1' y='6' width='5' height='4' rx='1' fill='%23EF9F27'/><rect x='7' y='6' width='24' height='4' rx='1' fill='%231e1e2a'/><rect x='1' y='11' width='5' height='4' rx='1' fill='%23f0d050'/><rect x='7' y='11' width='24' height='4' rx='1' fill='%231e1e2a'/><rect x='1' y='16' width='5' height='4' rx='1' fill='%234caf7d'/><rect x='7' y='16' width='24' height='4' rx='1' fill='%231e1e2a'/><rect x='1' y='21' width='5' height='4' rx='1' fill='%23378ADD'/><rect x='7' y='21' width='24' height='4' rx='1' fill='%231e1e2a'/><rect x='1' y='26' width='5' height='4' rx='1' fill='%237c6fff'/><rect x='7' y='26' width='24' height='4' rx='1' fill='%231e1e2a'/></svg>">
 <style>
@@ -694,11 +694,13 @@ function moveItemTo(toId){
   closeMoveModal();closeDetailModal();renderMain();scheduleSave(l);
 }
 
-// ── AUTO-SCROLL DURING DRAG ──
+// ── AUTO-SCROLL DURANTE DRAG ──
 let scrollRaf=null;
-const SCROLL_ZONE=80, SCROLL_SPEED=12;
+const SCROLL_ZONE=80,SCROLL_SPEED=14;
 function dragAutoScroll(e){
-  const y=e.clientY;const h=window.innerHeight;
+  // só scrolla se estiver arrastando um card de verdade
+  if(!dragItemId){stopAutoScroll();return;}
+  const y=e.clientY,h=window.innerHeight;
   cancelAnimationFrame(scrollRaf);
   if(y<SCROLL_ZONE){
     const speed=SCROLL_SPEED*(1-(y/SCROLL_ZONE));
@@ -714,6 +716,36 @@ function stopAutoScroll(){cancelAnimationFrame(scrollRaf);scrollRaf=null;}
 document.addEventListener('dragover',dragAutoScroll);
 document.addEventListener('dragend',stopAutoScroll);
 document.addEventListener('drop',stopAutoScroll);
+document.addEventListener('dragleave',e=>{if(e.clientY<=0||e.clientX<=0||e.clientX>=window.innerWidth||e.clientY>=window.innerHeight)stopAutoScroll();});
+
+// ── SCROLL COM MOUSE PRESSIONADO (click + hold + move) ──
+let isMouseScrolling=false,mouseScrollY=0,mouseScrollX=0;
+document.addEventListener('mousedown',e=>{
+  // só ativa em área de conteúdo, não em botões/inputs/cards
+  if(e.button!==0)return;
+  const tag=e.target.tagName;
+  if(['BUTTON','INPUT','TEXTAREA','SELECT','A'].includes(tag))return;
+  if(e.target.closest('.item-card,.tier-label,.tier-handle,.modal,.sidebar,.topbar'))return;
+  isMouseScrolling=true;mouseScrollY=e.clientY;mouseScrollX=e.clientX;
+  document.body.style.cursor='grabbing';
+});
+document.addEventListener('mousemove',e=>{
+  if(!isMouseScrolling)return;
+  const dy=mouseScrollY-e.clientY;
+  const dx=mouseScrollX-e.clientX;
+  window.scrollBy(dx,dy);
+  mouseScrollY=e.clientY;mouseScrollX=e.clientX;
+});
+document.addEventListener('mouseup',()=>{
+  if(!isMouseScrolling)return;
+  isMouseScrolling=false;
+  document.body.style.cursor='';
+});
+document.addEventListener('mouseleave',()=>{
+  if(!isMouseScrolling)return;
+  isMouseScrolling=false;
+  document.body.style.cursor='';
+});
 
 (async()=>{try{lists=await loadAll();activeId=lists.length>0?lists[lists.length-1].id:null;renderAll();setStatus('✓ Conectado');}catch(e){console.error(e);setStatus('⚠ Erro','error');}})();
 </script>
