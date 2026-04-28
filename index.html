@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TLMF - Sistema de Ranking</title>
+<title>TLMF - Ranking Foda</title>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='5' fill='%230f0f13'/><rect x='1' y='1' width='5' height='4' rx='1' fill='%23E24B4A'/><rect x='7' y='1' width='24' height='4' rx='1' fill='%231e1e2a'/><rect x='1' y='6' width='5' height='4' rx='1' fill='%23EF9F27'/><rect x='7' y='6' width='24' height='4' rx='1' fill='%231e1e2a'/><rect x='1' y='11' width='5' height='4' rx='1' fill='%23f0d050'/><rect x='7' y='11' width='24' height='4' rx='1' fill='%231e1e2a'/><rect x='1' y='16' width='5' height='4' rx='1' fill='%234caf7d'/><rect x='7' y='16' width='24' height='4' rx='1' fill='%231e1e2a'/><rect x='1' y='21' width='5' height='4' rx='1' fill='%23378ADD'/><rect x='7' y='21' width='24' height='4' rx='1' fill='%231e1e2a'/><rect x='1' y='26' width='5' height='4' rx='1' fill='%237c6fff'/><rect x='7' y='26' width='24' height='4' rx='1' fill='%231e1e2a'/></svg>">
 <style>
@@ -129,6 +129,11 @@
   .swatches{display:flex;gap:8px;flex-wrap:wrap}
   .swatch{width:24px;height:24px;border-radius:50%;border:2px solid transparent;cursor:pointer}
   .swatch.sel{border-color:#fff}
+
+  .move-tier-btn{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:10px;border:1px solid var(--border);background:var(--surface2);cursor:pointer;transition:all .15s;width:100%;font-family:'DM Sans',sans-serif;color:var(--text);font-size:14px;font-weight:500}
+  .move-tier-btn:hover{border-color:var(--accent);background:rgba(124,111,255,.08);color:var(--accent)}
+  .move-tier-dot{width:32px;height:32px;border-radius:6px;flex-shrink:0}
+  .move-tier-active{border-color:var(--accent);opacity:.5;cursor:default}
 
   .url-ok{color:#4caf7d}
   .url-err{color:var(--danger)}
@@ -269,8 +274,20 @@
     </div>
     <div class="modal-actions">
       <button class="btn btn-danger" onclick="removeCurrentItem()">Remover item</button>
+      <button class="btn" onclick="openMovePicker()">📦 Mover</button>
       <button class="btn" onclick="closeDetailModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveDetail()">Salvar Notas</button>
+    </div>
+  </div>
+</div>
+
+<!-- Move Picker Modal -->
+<div class="modal-bg" id="moveModal">
+  <div class="modal" style="max-width:340px">
+    <h3>Mover para...</h3>
+    <div id="moveTierList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeMoveModal()">Cancelar</button>
     </div>
   </div>
 </div>
@@ -639,7 +656,65 @@ function onDrop(e,toId){
   renderMain();scheduleSave(l);
 }
 
-['tierModal','itemModal','detailModal','settingsModal'].forEach(id=>{document.getElementById(id).onclick=e=>{if(e.target===e.currentTarget)document.getElementById(id).classList.remove('open');};});
+['tierModal','itemModal','detailModal','settingsModal','moveModal'].forEach(id=>{document.getElementById(id).onclick=e=>{if(e.target===e.currentTarget)document.getElementById(id).classList.remove('open');};});
+
+// ── MOVE PICKER ──
+function openMovePicker(){
+  const l=aList();if(!l)return;
+  const list=document.getElementById('moveTierList');list.innerHTML='';
+  // Tiers
+  l.tiers.forEach(t=>{
+    const isCurrent=detailFromId===t.id;
+    const btn=document.createElement('button');
+    btn.className='move-tier-btn'+(isCurrent?' move-tier-active':'');
+    btn.disabled=isCurrent;
+    btn.innerHTML=`<div class="move-tier-dot" style="background:${t.color}"></div><span>${t.letter} — ${t.name}</span>${isCurrent?'<span style="margin-left:auto;font-size:11px;color:var(--text2)">atual</span>':''}`;
+    if(!isCurrent)btn.onclick=()=>moveItemTo(t.id);
+    list.appendChild(btn);
+  });
+  // Sem rank
+  const isCurrent=detailFromId==='unranked';
+  const btn=document.createElement('button');
+  btn.className='move-tier-btn'+(isCurrent?' move-tier-active':'');
+  btn.disabled=isCurrent;
+  btn.innerHTML=`<div class="move-tier-dot" style="background:var(--surface2);border:1px solid var(--border2)"></div><span>Sem rank</span>${isCurrent?'<span style="margin-left:auto;font-size:11px;color:var(--text2)">atual</span>':''}`;
+  if(!isCurrent)btn.onclick=()=>moveItemTo('unranked');
+  list.appendChild(btn);
+  document.getElementById('moveModal').classList.add('open');
+}
+function closeMoveModal(){document.getElementById('moveModal').classList.remove('open');}
+function moveItemTo(toId){
+  const l=aList();if(!l||!detailItemId)return;
+  let item;
+  if(detailFromId==='unranked'){item=l.unranked.find(x=>x.id===detailItemId);l.unranked=l.unranked.filter(x=>x.id!==detailItemId);}
+  else{const t=l.tiers.find(x=>x.id===detailFromId);item=t?.items.find(x=>x.id===detailItemId);if(t)t.items=t.items.filter(x=>x.id!==detailItemId);}
+  if(!item)return;
+  if(toId==='unranked')l.unranked.push(item);
+  else{const t=l.tiers.find(x=>x.id===toId);if(t){t.items.push(item);sortTier(t);}}
+  closeMoveModal();closeDetailModal();renderMain();scheduleSave(l);
+}
+
+// ── AUTO-SCROLL DURING DRAG ──
+let scrollRaf=null;
+const SCROLL_ZONE=80, SCROLL_SPEED=12;
+function dragAutoScroll(e){
+  const y=e.clientY;const h=window.innerHeight;
+  cancelAnimationFrame(scrollRaf);
+  if(y<SCROLL_ZONE){
+    const speed=SCROLL_SPEED*(1-(y/SCROLL_ZONE));
+    const step=()=>{window.scrollBy(0,-speed);scrollRaf=requestAnimationFrame(step);};
+    scrollRaf=requestAnimationFrame(step);
+  }else if(y>h-SCROLL_ZONE){
+    const speed=SCROLL_SPEED*(1-((h-y)/SCROLL_ZONE));
+    const step=()=>{window.scrollBy(0,speed);scrollRaf=requestAnimationFrame(step);};
+    scrollRaf=requestAnimationFrame(step);
+  }
+}
+function stopAutoScroll(){cancelAnimationFrame(scrollRaf);scrollRaf=null;}
+document.addEventListener('dragover',dragAutoScroll);
+document.addEventListener('dragend',stopAutoScroll);
+document.addEventListener('drop',stopAutoScroll);
+
 (async()=>{try{lists=await loadAll();activeId=lists.length>0?lists[lists.length-1].id:null;renderAll();setStatus('✓ Conectado');}catch(e){console.error(e);setStatus('⚠ Erro','error');}})();
 </script>
 </body>
