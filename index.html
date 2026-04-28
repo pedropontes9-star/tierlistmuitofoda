@@ -623,7 +623,7 @@ function makeCard(item,from,sym){
 function bindCards(){
   document.querySelectorAll('.item-card').forEach(card=>{
     card.addEventListener('dragstart',e=>{if(e.target.classList.contains('rm-btn')){e.preventDefault();return;}dragItemId=card.dataset.itemid;dragItemFrom=card.dataset.from;e.dataTransfer.effectAllowed='move';setTimeout(()=>card.classList.add('card-dragging'),0);});
-    card.addEventListener('dragend',()=>{card.classList.remove('card-dragging');dragItemId=null;});
+    card.addEventListener('dragend',()=>{card.classList.remove('card-dragging');dragItemId=null;dragItemFrom=null;stopAutoScroll();});
   });
 }
 function renderSidebar(){
@@ -695,28 +695,47 @@ function moveItemTo(toId){
 }
 
 // ── AUTO-SCROLL DURANTE DRAG ──
-let scrollRaf=null;
+let scrollRaf=null, scrollActive=false, scrollSafetyTimer=null;
 const SCROLL_ZONE=80,SCROLL_SPEED=14;
-function dragAutoScroll(e){
-  // só scrolla se estiver arrastando um card de verdade
-  if(!dragItemId){stopAutoScroll();return;}
-  const y=e.clientY,h=window.innerHeight;
+
+function startAutoScroll(speed){
+  stopAutoScroll();
+  scrollActive=true;
+  const step=()=>{
+    if(!scrollActive||!dragItemId){stopAutoScroll();return;}
+    window.scrollBy(0,speed);
+    scrollRaf=requestAnimationFrame(step);
+  };
+  scrollRaf=requestAnimationFrame(step);
+}
+function stopAutoScroll(){
+  scrollActive=false;
   cancelAnimationFrame(scrollRaf);
+  scrollRaf=null;
+  clearTimeout(scrollSafetyTimer);
+}
+function dragAutoScroll(e){
+  if(!dragItemId){stopAutoScroll();return;}
+  // reset safety timer — se não receber dragover por 150ms, para tudo
+  clearTimeout(scrollSafetyTimer);
+  scrollSafetyTimer=setTimeout(stopAutoScroll,150);
+  const y=e.clientY,h=window.innerHeight;
   if(y<SCROLL_ZONE){
-    const speed=SCROLL_SPEED*(1-(y/SCROLL_ZONE));
-    const step=()=>{window.scrollBy(0,-speed);scrollRaf=requestAnimationFrame(step);};
-    scrollRaf=requestAnimationFrame(step);
+    startAutoScroll(-SCROLL_SPEED*(1-(y/SCROLL_ZONE)));
   }else if(y>h-SCROLL_ZONE){
-    const speed=SCROLL_SPEED*(1-((h-y)/SCROLL_ZONE));
-    const step=()=>{window.scrollBy(0,speed);scrollRaf=requestAnimationFrame(step);};
-    scrollRaf=requestAnimationFrame(step);
+    startAutoScroll(SCROLL_SPEED*(1-((h-y)/SCROLL_ZONE)));
+  }else{
+    stopAutoScroll();
   }
 }
-function stopAutoScroll(){cancelAnimationFrame(scrollRaf);scrollRaf=null;}
 document.addEventListener('dragover',dragAutoScroll);
-document.addEventListener('dragend',stopAutoScroll);
-document.addEventListener('drop',stopAutoScroll);
-document.addEventListener('dragleave',e=>{if(e.clientY<=0||e.clientX<=0||e.clientX>=window.innerWidth||e.clientY>=window.innerHeight)stopAutoScroll();});
+document.addEventListener('dragend',stopAutoScroll,true);
+document.addEventListener('drop',stopAutoScroll,true);
+document.addEventListener('mouseup',stopAutoScroll,true);
+document.addEventListener('pointerup',stopAutoScroll,true);
+document.addEventListener('dragleave',e=>{
+  if(e.clientY<=0||e.clientX<=0||e.clientX>=window.innerWidth||e.clientY>=window.innerHeight)stopAutoScroll();
+});
 
 // ── SCROLL COM MOUSE PRESSIONADO (click + hold + move) ──
 let isMouseScrolling=false,mouseScrollY=0,mouseScrollX=0;
