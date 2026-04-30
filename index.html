@@ -666,23 +666,16 @@ async function fetchAiSummary(){
   body.innerHTML=`<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div><span>Pesquisando na web sobre "${itemName}"...</span></div>`;
 
   try{
-    const resp=await fetch('https://api.anthropic.com/v1/messages',{
+    const resp=await fetch('https://tlmf-api.pedropontes9.workers.dev/ai-summary',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:1000,
-        tools:[{type:'web_search_20250305',name:'web_search'}],
-        system:'Você é um assistente especialista em animes, filmes, séries, mangás, games e cultura pop. Responda sempre em português brasileiro. Seja conciso e informativo.',
-        messages:[{role:'user',content:`Faça uma busca na web e escreva um resumo em português sobre: "${itemName}". Inclua: gênero, ano, sinopse breve, e por que é relevante. Máximo 4 parágrafos curtos. Não use markdown com asteriscos — escreva em texto corrido, separado em parágrafos com quebra de linha.`}]
-      })
+      body:JSON.stringify({itemName})
     });
 
     if(!resp.ok){const err=await resp.text();throw new Error(err);}
     const data=await resp.json();
 
-    // Extrai texto das respostas (pode ter blocos tool_use, text, etc.)
-    const textBlocks=data.content.filter(b=>b.type==='text').map(b=>b.text).join('\n');
+    const textBlocks=data.text||'';
     
     if(!textBlocks.trim()){throw new Error('Nenhum texto retornado.');}
 
