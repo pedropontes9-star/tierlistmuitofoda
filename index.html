@@ -564,19 +564,20 @@ function openDetail(itemId,fromId){
   }
   document.getElementById('detailModal').classList.add('open');
 
-  // Carrega resumo IA salvo, se houver
+  // Carrega resumo IA (local primeiro, depois Supabase)
   const aiBody=document.getElementById('dAiBody');
   const aiBtn=document.getElementById('dAiBtn');
-  if(item.aiSummary){
-    const paragraphs=item.aiSummary.split('\n').filter(p=>p.trim().length>0);
-    const html=paragraphs.map(p=>`<p>${p.trim()}</p>`).join('');
-    aiBody.innerHTML=`<div class="ai-summary-text">${html}</div>`;
-    aiBtn.textContent='🔄 Atualizar';
-  }else{
-    aiBody.innerHTML=`<span class="ai-summary-placeholder">Clique em "Buscar" para gerar um resumo automático com busca na web.</span>`;
-    aiBtn.textContent='🔍 Buscar';
-  }
   aiBtn.disabled=false;
+  if(item.aiSummary){
+    renderSummary(item.aiSummary,aiBody,aiBtn);
+  }else{
+    aiBody.innerHTML=`<span class="ai-summary-placeholder">Clique em "Buscar" para gerar um resumo automático.</span>`;
+    aiBtn.textContent='🔍 Buscar';
+    // Tenta carregar do Supabase em background
+    sbLoadSummary(item.name).then(text=>{
+      if(text){item.aiSummary=text;renderSummary(text,aiBody,aiBtn);}
+    }).catch(()=>{});
+  }
 }
 function calcAvg(){
   const inps=document.querySelectorAll('.rating-topic-input');let sum=0,count=0;
@@ -656,6 +657,21 @@ function saveEditItem(){
 }
 
 // ── AI SUMMARY ──
+function renderSummary(text,body,btn){
+  const paragraphs=text.split('\n').filter(p=>p.trim().length>0).slice(0,10);
+  const html=paragraphs.map(p=>`<p>${p.trim()}</p>`).join('');
+  body.innerHTML=`<div class="ai-summary-text">${html}</div>`;
+  btn.textContent='🔄 Atualizar';
+}
+async function sbSaveSummary(itemName,text){
+  await sbReq('ai_summaries',{method:'POST',
+    headers:{'Prefer':'resolution=merge-duplicates'},
+    body:JSON.stringify({item_name:itemName,summary:text,updated_at:new Date().toISOString()})});
+}
+async function sbLoadSummary(itemName){
+  const rows=await sbReq('ai_summaries?item_name=eq.'+encodeURIComponent(itemName)+'&select=summary&limit=1');
+  return rows&&rows.length>0?rows[0].summary:null;
+}
 async function fetchAiSummary(){
   const l=aList();const found=findItem(l,detailItemId);if(!found)return;
   const itemName=found.item.name;
@@ -663,7 +679,7 @@ async function fetchAiSummary(){
   const body=document.getElementById('dAiBody');
 
   btn.disabled=true;btn.textContent='⏳ Buscando...';
-  body.innerHTML=`<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div><span>Pesquisando na web sobre "${itemName}"...</span></div>`;
+  body.innerHTML=`<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div><span>Gerando resumo sobre "${itemName}"...</span></div>`;
 
   try{
     const resp=await fetch('https://tlmf-api.pedropontes9.workers.dev/ai-summary',{
@@ -674,20 +690,12 @@ async function fetchAiSummary(){
 
     if(!resp.ok){const err=await resp.text();throw new Error(err);}
     const data=await resp.json();
+    const text=data.text||'';
+    if(!text.trim()){throw new Error('Nenhum texto retornado.');}
 
-    const textBlocks=data.text||'';
-    
-    if(!textBlocks.trim()){throw new Error('Nenhum texto retornado.');}
-
-    // Renderiza parágrafos
-    const paragraphs=textBlocks.split('\n').filter(p=>p.trim().length>0);
-    const html=paragraphs.map(p=>`<p>${p.trim()}</p>`).join('');
-    body.innerHTML=`<div class="ai-summary-text">${html}</div>`;
-    btn.textContent='🔄 Atualizar';
-
-    // Salva no item para não perder ao reabrir
-    found.item.aiSummary=textBlocks;
-    scheduleSave(l);
+    renderSummary(text,body,btn);
+    found.item.aiSummary=text;
+    await sbSaveSummary(itemName,text);
 
   }catch(err){
     console.error('AI Summary error:',err);
