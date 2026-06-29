@@ -690,10 +690,51 @@ const AI_INFO_TYPE='tlmf_ai_info_v1';
 function escapeHtml(v){
   return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
+function normText(v){
+  return String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
+}
+function titleCaseGenre(v){
+  const keepUpper=['OVA','ONA','TV','Sci-Fi'];
+  const txt=String(v||'').trim().replace(/^[-•*\d.)\s]+/,'').replace(/[.!?]+$/,'');
+  if(!txt)return'';
+  if(keepUpper.some(k=>k.toLowerCase()===txt.toLowerCase()))return keepUpper.find(k=>k.toLowerCase()===txt.toLowerCase());
+  const fixed=txt
+    .replace(/ficcao cientifica/ig,'Ficção científica')
+    .replace(/sci fi|sci-fi/ig,'Ficção científica')
+    .replace(/slice of life/ig,'Slice of Life')
+    .replace(/artes marciais/ig,'Artes marciais')
+    .replace(/acao/ig,'Ação')
+    .replace(/aventura/ig,'Aventura')
+    .replace(/fantasia/ig,'Fantasia')
+    .replace(/comedia/ig,'Comédia')
+    .replace(/romance/ig,'Romance')
+    .replace(/drama/ig,'Drama')
+    .replace(/misterio/ig,'Mistério')
+    .replace(/suspense/ig,'Suspense')
+    .replace(/terror|horror/ig,'Terror')
+    .replace(/sobrenatural/ig,'Sobrenatural')
+    .replace(/psicologico/ig,'Psicológico')
+    .replace(/escolar/ig,'Escolar')
+    .replace(/esporte/ig,'Esporte')
+    .replace(/mecha/ig,'Mecha')
+    .replace(/isekai/ig,'Isekai');
+  return fixed.charAt(0).toUpperCase()+fixed.slice(1);
+}
 function cleanGenres(genres){
-  if(typeof genres==='string')genres=genres.split(/[,;|\n]/);
+  if(typeof genres==='string'){
+    genres=genres
+      .replace(/^(principais\s+)?(g[eê]neros?|genres?|categorias?|categories|tags|temas?|themes|demografia|demographic)\s*[:\-–—]\s*/i,'')
+      .replace(/\b(e|and)\b/gi, ',')
+      .split(/[,;|\n/]+/);
+  }
   if(!Array.isArray(genres))return[];
-  return genres.map(g=>String(g||'').trim()).filter(Boolean).filter((g,i,a)=>a.findIndex(x=>x.toLowerCase()===g.toLowerCase())===i).slice(0,4);
+  const blocked=/^(nao encontrado|não encontrado|n\/a|desconhecido|unknown|null|undefined|nenhum|sem genero|sem gênero)$/i;
+  return genres
+    .flatMap(g=>Array.isArray(g)?g:[g])
+    .map(g=>titleCaseGenre(String(g||'').replace(/[\[\]{}"'`]/g,'').trim()))
+    .filter(g=>g && !blocked.test(g) && g.length<=32)
+    .filter((g,i,a)=>a.findIndex(x=>normText(x)===normText(g))===i)
+    .slice(0,4);
 }
 function normalizeAiInfo(raw){
   if(!raw)return null;
@@ -702,18 +743,19 @@ function normalizeAiInfo(raw){
     const trimmed=raw.trim();
     if(!trimmed)return null;
     try{return normalizeAiInfo(JSON.parse(trimmed));}catch{}
-    return {
+    const parsed=parseAiText(trimmed);
+    return parsed?{
       type:AI_INFO_TYPE,
-      genres:[],
-      description:trimmed,
-      originalGenres:[],
-      originalDescription:trimmed,
+      genres:cleanGenres(parsed.genres),
+      description:String(parsed.description||trimmed).trim(),
+      originalGenres:cleanGenres(parsed.genres),
+      originalDescription:String(parsed.description||trimmed).trim(),
       updatedAt:null
-    };
+    }:null;
   }
 
-  const genres=cleanGenres(raw.genres||raw.generos||raw['gêneros']);
-  const description=String(raw.description||raw.descricao||raw['descrição']||raw.summary||raw.text||'').trim();
+  const genres=cleanGenres(raw.genres||raw.generos||raw['gêneros']||raw.categories||raw.categorias||raw.tags||raw.themes||raw.temas);
+  const description=String(raw.description||raw.descricao||raw['descrição']||raw.synopsis||raw.sinopse||raw.summary||raw.text||'').trim();
   const originalGenres=cleanGenres(raw.originalGenres||raw.generosOriginais||raw.original?.genres||raw.original?.generos);
   const originalDescription=String(raw.originalDescription||raw.descricaoOriginal||raw.original?.description||raw.original?.descricao||'').trim();
 
@@ -784,7 +826,7 @@ function renderAiInfo(item){
   btn.textContent='🔄 Atualizar';
   const chips=info.genres.length
     ? `<div class="ai-genres">${info.genres.map(g=>`<span class="ai-genre-chip">${escapeHtml(g)}</span>`).join('')}</div>`
-    : `<div class="ai-summary-placeholder" style="margin-bottom:10px">Gêneros não encontrados.</div>`;
+    : `<div class="ai-summary-placeholder" style="margin-bottom:10px">Gêneros não encontrados. Clique em Atualizar para tentar novamente.</div>`;
 
   const paragraphs=String(info.description||'')
     .split('\n')
@@ -796,35 +838,107 @@ function renderAiInfo(item){
 
   body.innerHTML=`${chips}<div class="ai-summary-subtitle">Descrição</div><div class="ai-summary-text">${paragraphs||'<p>Descrição não encontrada.</p>'}</div>`;
 }
+function extractJsonFromText(raw){
+  const text=String(raw||'').trim();
+  const fenced=text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  const candidate=fenced?fenced[1].trim():text;
+  try{return JSON.parse(candidate);}catch{}
+  const firstObj=candidate.indexOf('{'), lastObj=candidate.lastIndexOf('}');
+  if(firstObj>=0&&lastObj>firstObj){try{return JSON.parse(candidate.slice(firstObj,lastObj+1));}catch{}}
+  const firstArr=candidate.indexOf('['), lastArr=candidate.lastIndexOf(']');
+  if(firstArr>=0&&lastArr>firstArr){try{return JSON.parse(candidate.slice(firstArr,lastArr+1));}catch{}}
+  return null;
+}
+function extractGenreListAfterHeading(raw){
+  const text=String(raw||'');
+  const patterns=[
+    /(?:^|\n)\s*(?:#+\s*)?(?:principais\s+)?g[eê]neros?\s*[:\-–—]\s*([^\n]+)/i,
+    /(?:^|\n)\s*(?:#+\s*)?(?:main\s+)?genres?\s*[:\-–—]\s*([^\n]+)/i,
+    /(?:^|\n)\s*(?:#+\s*)?(?:categorias?|categories|tags|temas?|themes)\s*[:\-–—]\s*([^\n]+)/i
+  ];
+  for(const rgx of patterns){
+    const m=text.match(rgx);
+    if(m){const found=cleanGenres(m[1]);if(found.length)return found;}
+  }
+
+  const lines=text.split('\n').map(l=>l.trim()).filter(Boolean);
+  const idx=lines.findIndex(l=>/^(#+\s*)?(principais\s+)?(g[eê]neros?|genres?|categorias?|categories|tags|temas?|themes)\b/i.test(l));
+  if(idx>=0){
+    const next=[];
+    for(let i=idx+1;i<Math.min(lines.length,idx+6);i++){
+      if(/^(#+\s*)?(descri[cç][aã]o|sinopse|resumo|summary|description)\b/i.test(lines[i]))break;
+      next.push(lines[i].replace(/^[-•*\d.)\s]+/,''));
+    }
+    const found=cleanGenres(next);
+    if(found.length)return found;
+  }
+
+  return [];
+}
+function stripGenreHeadings(raw){
+  return String(raw||'')
+    .replace(/^(#+\s*)?(principais\s+)?(g[eê]neros?|genres?|categorias?|categories|tags|temas?|themes)\s*[:\-–—].*$/gim,'')
+    .replace(/^(#+\s*)?(descri[cç][aã]o|sinopse|resumo|summary|description)\s*[:\-–—]\s*/gim,'')
+    .trim();
+}
 function parseAiText(text){
   const raw=String(text||'').trim();
   if(!raw)return null;
 
-  try{return parseAiResponse(JSON.parse(raw));}catch{}
+  const extracted=extractJsonFromText(raw);
+  if(extracted)return parseAiResponse(extracted);
 
-  const genreMatch=raw.match(/g[eê]neros?\s*[:\-]\s*([^\n]+)/i);
-  const genres=genreMatch?cleanGenres(genreMatch[1]):[];
-  let description=raw
-    .replace(/^(#+\s*)?(g[eê]neros?|principais g[eê]neros)\s*[:\-].*$/gim,'')
-    .replace(/^(#+\s*)?(descri[cç][aã]o|sinopse|resumo)\s*[:\-]\s*/gim,'')
-    .trim();
-
-  return {genres,description:description||raw};
+  const genres=extractGenreListAfterHeading(raw);
+  const description=stripGenreHeadings(raw)||raw;
+  return {genres,description};
+}
+function findValueDeep(obj,keyRegex,depth=0){
+  if(!obj||depth>4)return undefined;
+  if(Array.isArray(obj)){
+    for(const v of obj){const found=findValueDeep(v,keyRegex,depth+1);if(found!==undefined)return found;}
+    return undefined;
+  }
+  if(typeof obj==='object'){
+    for(const [k,v] of Object.entries(obj)){
+      if(keyRegex.test(k))return v;
+      const found=findValueDeep(v,keyRegex,depth+1);
+      if(found!==undefined)return found;
+    }
+  }
+  return undefined;
 }
 function parseAiResponse(data){
   if(!data)return null;
+  if(typeof data==='string')return parseAiText(data);
 
-  const textObj=typeof data.text==='string'?(()=>{
-    try{return JSON.parse(data.text);}catch{return null;}
-  })():null;
+  const textFields=[];
+  const directText=data.text||data.output||data.result||data.response||data.message||data.content;
+  if(typeof directText==='string')textFields.push(directText);
+  if(Array.isArray(data.choices)){
+    data.choices.forEach(c=>{
+      const t=c?.message?.content||c?.text||c?.content;
+      if(typeof t==='string')textFields.push(t);
+    });
+  }
 
-  const src=textObj||data;
-  const genres=cleanGenres(src.genres||src.generos||src['gêneros']);
-  const description=String(src.description||src.descricao||src['descrição']||src.summary||'').trim();
+  for(const t of textFields){
+    const json=extractJsonFromText(t);
+    if(json){const parsed=parseAiResponse(json);if(parsed&&(parsed.genres.length||parsed.description))return parsed;}
+  }
+
+  const genreSource=data.genres||data.generos||data['gêneros']||data.categories||data.categorias||data.tags||data.themes||data.temas||findValueDeep(data,/^(genres?|generos|gêneros|categories|categorias|tags|themes|temas)$/i);
+  const genres=cleanGenres(genreSource);
+  const descriptionSource=data.description||data.descricao||data['descrição']||data.synopsis||data.sinopse||data.summary||findValueDeep(data,/^(description|descricao|descrição|synopsis|sinopse|summary)$/i);
+  let description=String(descriptionSource||'').trim();
+
+  if(!description&&textFields.length){
+    const parsedText=parseAiText(textFields[0]);
+    description=parsedText?.description||textFields[0];
+    const textGenres=parsedText?.genres||[];
+    if(textGenres.length||description)return{genres:genres.length?genres:textGenres,description};
+  }
 
   if(genres.length||description)return{genres,description};
-
-  if(typeof data.text==='string')return parseAiText(data.text);
   return null;
 }
 function serializeAiInfo(info){
@@ -850,12 +964,108 @@ async function sbLoadAiInfo(itemName){
   if(info&&!info.updatedAt)info.updatedAt=rows[0].updated_at||null;
   return info;
 }
+async function fetchJsonSafe(url){
+  const resp=await fetch(url,{headers:{'Accept':'application/json'}});
+  if(!resp.ok)return null;
+  return await resp.json();
+}
+function scoreTitleMatch(query,entry){
+  const q=normText(query).replace(/[^a-z0-9]+/g,' ').trim();
+  const titles=[entry.title,entry.title_english,entry.title_japanese,...(entry.titles||[]).map(t=>t.title)].filter(Boolean);
+  let best=0;
+  for(const t of titles){
+    const n=normText(t).replace(/[^a-z0-9]+/g,' ').trim();
+    if(!n)continue;
+    if(n===q)best=Math.max(best,100);
+    else if(n.includes(q)||q.includes(n))best=Math.max(best,80);
+    else{
+      const qWords=new Set(q.split(' ').filter(w=>w.length>2));
+      const nWords=new Set(n.split(' ').filter(w=>w.length>2));
+      const common=[...qWords].filter(w=>nWords.has(w)).length;
+      best=Math.max(best,common*12);
+    }
+  }
+  return best;
+}
+function jikanEntryToInfo(entry){
+  if(!entry)return null;
+  const genreNames=[...(entry.genres||[]),...(entry.themes||[]),...(entry.demographics||[])]
+    .map(g=>g?.name)
+    .filter(Boolean);
+  const genres=cleanGenres(genreNames);
+  const description=String(entry.synopsis||entry.background||'').replace(/\s*\[Written by MAL Rewrite\]\s*/i,'').trim();
+  return {genres,description};
+}
+async function fetchJikanInfo(itemName){
+  const q=encodeURIComponent(itemName);
+  const urls=[`https://api.jikan.moe/v4/anime?q=${q}&limit=5`,`https://api.jikan.moe/v4/manga?q=${q}&limit=5`];
+  for(const url of urls){
+    try{
+      const data=await fetchJsonSafe(url);
+      const arr=data?.data||[];
+      if(!arr.length)continue;
+      const best=[...arr].sort((a,b)=>scoreTitleMatch(itemName,b)-scoreTitleMatch(itemName,a))[0];
+      const info=jikanEntryToInfo(best);
+      if(info&&(info.genres.length||info.description))return info;
+    }catch(err){console.warn('Jikan fallback error:',err);}
+  }
+  return null;
+}
+function inferGenresFromText(itemName,description){
+  const text=normText(`${itemName} ${description}`);
+  const rules=[
+    ['Ação',['acao','batalha','luta','combate','guerra','duelo','poder','heroi','vilao','missao','ninjas','espadas','cacador','hunter']],
+    ['Aventura',['aventura','jornada','viagem','exploracao','mundo','ilha','tesouro','sobrevivencia','expedicao']],
+    ['Fantasia',['fantasia','magia','magico','feitico','demonio','dragao','reino','espirito','maldicao','deus','deuses','sobrenatural','chakra','quirk']],
+    ['Drama',['drama','trauma','perda','luto','amadurecimento','conflito emocional','familia','sofrimento','superacao']],
+    ['Comédia',['comedia','humor','engracado','parodia','satira','absurdo','trapalhada']],
+    ['Romance',['romance','amor','casal','paixao','relacionamento','namoro']],
+    ['Mistério',['misterio','investigacao','segredo','enigma','detetive','desaparecimento']],
+    ['Suspense',['suspense','thriller','tensao','perseguicao','conspiracao']],
+    ['Terror',['terror','horror','medo','monstro','assombrado','macabro','zumbi']],
+    ['Ficção científica',['ficcao cientifica','sci fi','sci-fi','tecnologia','futuro','espaco','alien','cyberpunk','ciencia','distopia']],
+    ['Mecha',['mecha','robo','eva','evangelion','gundam','piloto','maquina gigante']],
+    ['Esporte',['esporte','futebol','basquete','volei','tenis','torneio','campeonato','time','partida']],
+    ['Slice of Life',['cotidiano','vida diaria','rotina','amizade','dia a dia','slice of life']],
+    ['Escolar',['escola','colegio','estudante','aluno','classe','academia']],
+    ['Psicológico',['psicologico','mente','identidade','filosofico','sanidade','trauma mental']],
+    ['Isekai',['isekai','outro mundo','reencarnado','transportado','mundo paralelo']],
+    ['Artes marciais',['artes marciais','karate','kung fu','dojo','boxe','lutador']],
+    ['Musical',['musica','banda','cantor','idol','instrumento','concerto']]
+  ];
+  const scored=rules.map(([genre,words])=>{
+    let score=0;
+    words.forEach(w=>{if(text.includes(w))score+=w.includes(' ')?3:1;});
+    return{genre,score};
+  }).filter(x=>x.score>0).sort((a,b)=>b.score-a.score).map(x=>x.genre);
+  return cleanGenres(scored);
+}
+async function enrichParsedAiInfo(itemName,parsed){
+  const base={genres:cleanGenres(parsed?.genres),description:String(parsed?.description||'').trim()};
+  if(base.genres.length>=4)return base;
+
+  const jikan=await fetchJikanInfo(itemName);
+  if(jikan){
+    base.genres=cleanGenres([...base.genres,...jikan.genres]);
+    if(!base.description&&jikan.description)base.description=jikan.description;
+  }
+
+  if(base.genres.length<4){
+    base.genres=cleanGenres([...base.genres,...inferGenresFromText(itemName,base.description)]);
+  }
+
+  return base;
+}
 async function requestAiInfo(itemName){
+  const prompt=`Você é uma IA de catálogo de obras. Para o título "${itemName}", retorne somente JSON válido, sem markdown, neste formato exato: {"genres":["Gênero 1","Gênero 2","Gênero 3","Gênero 4"],"description":"Descrição detalhada em português do Brasil"}. Os genres devem ser os 4 gêneros principais da obra, não escreva "não encontrado".`;
   const resp=await fetch(AI_WORKER_URL,{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
       itemName,
+      title:itemName,
+      prompt,
+      query:prompt,
       task:'genres_and_detailed_description',
       mode:'catalog',
       language:'pt-BR',
@@ -869,9 +1079,15 @@ async function requestAiInfo(itemName){
 
   if(!resp.ok){const err=await resp.text();throw new Error(err);}
   const data=await resp.json();
-  const parsed=parseAiResponse(data);
+  let parsed=parseAiResponse(data);
 
   if(!parsed||(!parsed.genres.length&&!parsed.description)){
+    parsed={genres:[],description:''};
+  }
+
+  parsed=await enrichParsedAiInfo(itemName,parsed);
+
+  if(!parsed.genres.length&&!parsed.description){
     throw new Error('Resposta da IA não trouxe gêneros nem descrição.');
   }
 
