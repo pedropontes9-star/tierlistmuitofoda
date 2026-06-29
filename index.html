@@ -132,13 +132,19 @@
 
   /* AI Summary */
   .ai-summary-section{margin-bottom:14px;border-radius:10px;border:1px solid var(--border);overflow:hidden}
-  .ai-summary-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:rgba(124,111,255,0.07);border-bottom:1px solid var(--border)}
+  .ai-summary-header{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;background:rgba(124,111,255,0.07);border-bottom:1px solid var(--border)}
   .ai-summary-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);font-weight:600}
+  .ai-summary-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
   .btn-ai{font-size:11px;padding:5px 12px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:7px;color:#fff;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;transition:opacity .15s;display:flex;align-items:center;gap:5px}
   .btn-ai:hover{opacity:.85}
   .btn-ai:disabled{opacity:.5;cursor:not-allowed}
+  .btn-ai-ghost{background:transparent;border:1px solid var(--border2);color:var(--text2)}
+  .btn-ai-ghost:hover{border-color:var(--accent);color:var(--accent)}
   .ai-summary-body{padding:12px 14px;min-height:36px}
   .ai-summary-placeholder{font-size:12px;color:var(--text2);font-style:italic}
+  .ai-genres{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+  .ai-genre-chip{font-size:11px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;color:#fff;background:rgba(124,111,255,.22);border:1px solid rgba(124,111,255,.45);border-radius:999px;padding:4px 9px}
+  .ai-summary-subtitle{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--text2);font-weight:700;margin:2px 0 7px}
   .ai-summary-text{font-size:13px;color:var(--text);line-height:1.6}
   .ai-summary-text p{margin-bottom:8px}
   .ai-summary-text p:last-child{margin-bottom:0}
@@ -285,14 +291,17 @@
       </div>
     </div>
 
-    <!-- AI Summary -->
+    <!-- AI Info -->
     <div class="ai-summary-section" id="dAiSection">
       <div class="ai-summary-header">
-        <span class="ai-summary-title">✨ Resumo IA</span>
-        <button class="btn-ai" id="dAiBtn" onclick="fetchAiSummary()">🔍 Buscar</button>
+        <span class="ai-summary-title">✨ IA da obra</span>
+        <div class="ai-summary-actions">
+          <button class="btn-ai btn-ai-ghost" id="dAiRewindBtn" onclick="rewindAiInfo()">↩ Rewind</button>
+          <button class="btn-ai" id="dAiBtn" onclick="fetchAiSummary()">🔄 Atualizar</button>
+        </div>
       </div>
       <div class="ai-summary-body" id="dAiBody">
-        <span class="ai-summary-placeholder">Clique em "Buscar" para gerar um resumo automático com busca na web.</span>
+        <span class="ai-summary-placeholder">Ao adicionar uma obra, a IA buscará 4 gêneros principais e uma descrição detalhada.</span>
       </div>
     </div>
 
@@ -385,12 +394,21 @@ async function sbReq(path,opts={}){
 }
 async function loadAll(){
   const rows=await sbReq('lists?order=updated_at.asc&select=id,title,color,data');
-  return(rows||[]).map(r=>({id:r.id,title:r.title,color:r.color,tiers:r.data?.tiers||[],unranked:r.data?.unranked||[],ratingSymbol:r.data?.ratingSymbol||'⭐',topics:r.data?.topics||[]}));
+  const clearItem=i=>{if(i)i.aiLoading=false;return i;};
+  return(rows||[]).map(r=>{
+    const l={id:r.id,title:r.title,color:r.color,tiers:r.data?.tiers||[],unranked:r.data?.unranked||[],ratingSymbol:r.data?.ratingSymbol||'⭐',topics:r.data?.topics||[]};
+    l.tiers.forEach(t=>(t.items||[]).forEach(clearItem));
+    l.unranked.forEach(clearItem);
+    return l;
+  });
 }
 async function upsert(list){
   const{id,title,color,tiers,unranked,ratingSymbol,topics}=list;
+  const cleanItem=i=>{const{aiLoading,...rest}=i;return rest;};
+  const cleanTiers=(tiers||[]).map(t=>({...t,items:(t.items||[]).map(cleanItem)}));
+  const cleanUnranked=(unranked||[]).map(cleanItem);
   await sbReq('lists',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates'},
-    body:JSON.stringify({id,title,color,data:{tiers,unranked,ratingSymbol,topics},updated_at:new Date().toISOString()})});
+    body:JSON.stringify({id,title,color,data:{tiers:cleanTiers,unranked:cleanUnranked,ratingSymbol,topics},updated_at:new Date().toISOString()})});
 }
 async function delList(id){await sbReq('lists?id=eq.'+id,{method:'DELETE'});}
 function setStatus(m,c=''){const e=document.getElementById('syncStatus');e.textContent=m;e.className='sync-status '+c;}
@@ -527,11 +545,15 @@ async function validateAddUrl(){
 }
 function saveItem(){
   const name=document.getElementById('iName').value.trim();if(!name)return;const l=aList();
-  const item={id:uid(),name,img:currentImg||'',rating:null,ratings:{}};
+  const item={id:uid(),name,img:currentImg||'',rating:null,ratings:{},aiInfo:null};
   if(addingToTierId){const t=l.tiers.find(x=>x.id===addingToTierId);t.items.push(item);sortTier(t);}
   else l.unranked.push(item);
   closeItemModal();renderMain();scheduleSave(l);
+
+  // Gera automaticamente os metadados da IA ao adicionar uma obra.
+  fetchAiInfoForItem(item,l,{auto:true}).catch(err=>console.error('AI auto error:',err));
 }
+
 function removeItem(itemId,fromId,e){if(e)e.stopPropagation();const l=aList();if(fromId==='unranked')l.unranked=l.unranked.filter(x=>x.id!==itemId);else{const t=l.tiers.find(x=>x.id===fromId);if(t)t.items=t.items.filter(x=>x.id!==itemId);}renderMain();scheduleSave(l);}
 
 // ── DETAIL ──
@@ -564,20 +586,15 @@ function openDetail(itemId,fromId){
   }
   document.getElementById('detailModal').classList.add('open');
 
-  // Carrega resumo IA (local primeiro, depois Supabase)
-  const aiBody=document.getElementById('dAiBody');
-  const aiBtn=document.getElementById('dAiBtn');
-  aiBtn.disabled=false;
-  if(item.aiSummary){
-    renderSummary(item.aiSummary,aiBody,aiBtn);
-  }else{
-    aiBody.innerHTML=`<span class="ai-summary-placeholder">Clique em "Buscar" para gerar um resumo automático.</span>`;
-    aiBtn.textContent='🔍 Buscar';
-    // Tenta carregar do Supabase em background
-    sbLoadSummary(item.name).then(text=>{
-      if(text){item.aiSummary=text;renderSummary(text,aiBody,aiBtn);}
-    }).catch(()=>{});
-  }
+  // Carrega IA da obra (local primeiro, depois Supabase)
+  renderAiInfo(item);
+  sbLoadAiInfo(item.name).then(info=>{
+    if(info && detailItemId===item.id){
+      item.aiInfo=mergeAiInfo(info,item.aiInfo);
+      renderAiInfo(item);
+      scheduleSave(l);
+    }
+  }).catch(()=>{});
 }
 function calcAvg(){
   const inps=document.querySelectorAll('.rating-topic-input');let sum=0,count=0;
@@ -647,8 +664,18 @@ async function validateUrl(){
 function saveEditItem(){
   const name=document.getElementById('dEditName').value.trim();if(!name)return;
   const l=aList();const found=findItem(l,detailItemId);if(!found)return;
+  const oldName=found.item.name;
   found.item.name=name;
   found.item.img=editImg||'';
+
+  // Se o título mudou, limpa os dados antigos de IA e gera novamente para a nova obra.
+  if(oldName!==name){
+    found.item.aiInfo=null;
+    found.item.aiSummary='';
+    renderAiInfo(found.item);
+    fetchAiInfoForItem(found.item,l,{auto:true}).catch(err=>console.error('AI edit error:',err));
+  }
+
   document.getElementById('dTitle').textContent=name;
   const di=document.getElementById('dImg');const dw=document.getElementById('dImgWrap');
   if(found.item.img){di.src=found.item.img;dw.className='detail-img-wrap show';}else{dw.className='detail-img-wrap';}
@@ -656,54 +683,250 @@ function saveEditItem(){
   renderMain();scheduleSave(l);
 }
 
-// ── AI SUMMARY ──
-function renderSummary(text,body,btn){
-  const paragraphs=text.split('\n').filter(p=>p.trim().length>0).slice(0,10);
-  const html=paragraphs.map(p=>`<p>${p.trim()}</p>`).join('');
-  body.innerHTML=`<div class="ai-summary-text">${html}</div>`;
-  btn.textContent='🔄 Atualizar';
+// ── AI DA OBRA ──
+const AI_WORKER_URL='https://tlmf-api.pedropontes9.workers.dev/ai-summary';
+const AI_INFO_TYPE='tlmf_ai_info_v1';
+
+function escapeHtml(v){
+  return String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 }
-async function sbSaveSummary(itemName,text){
+function cleanGenres(genres){
+  if(typeof genres==='string')genres=genres.split(/[,;|\n]/);
+  if(!Array.isArray(genres))return[];
+  return genres.map(g=>String(g||'').trim()).filter(Boolean).filter((g,i,a)=>a.findIndex(x=>x.toLowerCase()===g.toLowerCase())===i).slice(0,4);
+}
+function normalizeAiInfo(raw){
+  if(!raw)return null;
+
+  if(typeof raw==='string'){
+    const trimmed=raw.trim();
+    if(!trimmed)return null;
+    try{return normalizeAiInfo(JSON.parse(trimmed));}catch{}
+    return {
+      type:AI_INFO_TYPE,
+      genres:[],
+      description:trimmed,
+      originalGenres:[],
+      originalDescription:trimmed,
+      updatedAt:null
+    };
+  }
+
+  const genres=cleanGenres(raw.genres||raw.generos||raw['gêneros']);
+  const description=String(raw.description||raw.descricao||raw['descrição']||raw.summary||raw.text||'').trim();
+  const originalGenres=cleanGenres(raw.originalGenres||raw.generosOriginais||raw.original?.genres||raw.original?.generos);
+  const originalDescription=String(raw.originalDescription||raw.descricaoOriginal||raw.original?.description||raw.original?.descricao||'').trim();
+
+  if(!genres.length && !description)return null;
+
+  return {
+    type:AI_INFO_TYPE,
+    genres,
+    description,
+    originalGenres:originalGenres.length?originalGenres:genres,
+    originalDescription:originalDescription||description,
+    updatedAt:raw.updatedAt||raw.updated_at||null
+  };
+}
+function aiInfoFromItem(item){
+  return normalizeAiInfo(item.aiInfo)||normalizeAiInfo(item.aiSummary);
+}
+function mergeAiInfo(incoming,current){
+  const inc=normalizeAiInfo(incoming);
+  const cur=normalizeAiInfo(current);
+  if(!cur)return inc;
+  if(!inc)return cur;
+
+  const incTime=inc.updatedAt?new Date(inc.updatedAt).getTime():0;
+  const curTime=cur.updatedAt?new Date(cur.updatedAt).getTime():0;
+  return incTime>curTime?inc:cur;
+}
+function buildStoredAiInfo(parsed,previous){
+  const prev=normalizeAiInfo(previous);
+  const genres=cleanGenres(parsed.genres);
+  const description=String(parsed.description||'').trim();
+  return {
+    type:AI_INFO_TYPE,
+    genres,
+    description,
+    originalGenres:prev?.originalGenres?.length?prev.originalGenres:genres,
+    originalDescription:prev?.originalDescription||description,
+    updatedAt:new Date().toISOString()
+  };
+}
+function canRewindAi(info){
+  const i=normalizeAiInfo(info);
+  if(!i||(!i.originalDescription&&!i.originalGenres.length))return false;
+  return i.description!==i.originalDescription||JSON.stringify(i.genres)!==JSON.stringify(i.originalGenres);
+}
+function renderAiInfo(item){
+  const body=document.getElementById('dAiBody');
+  const btn=document.getElementById('dAiBtn');
+  const rewind=document.getElementById('dAiRewindBtn');
+  if(!body||!btn||!rewind)return;
+
+  const info=aiInfoFromItem(item);
+  btn.disabled=!!item.aiLoading;
+  rewind.disabled=!canRewindAi(info)||!!item.aiLoading;
+
+  if(item.aiLoading){
+    btn.textContent='⏳ Gerando...';
+    body.innerHTML=`<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div><span>Buscando gêneros e descrição de "${escapeHtml(item.name)}"...</span></div>`;
+    return;
+  }
+
+  if(!info){
+    btn.textContent='✨ Gerar';
+    body.innerHTML=`<span class="ai-summary-placeholder">Sem dados de IA ainda. Ao adicionar uma obra nova, isso será gerado automaticamente.</span>`;
+    return;
+  }
+
+  btn.textContent='🔄 Atualizar';
+  const chips=info.genres.length
+    ? `<div class="ai-genres">${info.genres.map(g=>`<span class="ai-genre-chip">${escapeHtml(g)}</span>`).join('')}</div>`
+    : `<div class="ai-summary-placeholder" style="margin-bottom:10px">Gêneros não encontrados.</div>`;
+
+  const paragraphs=String(info.description||'')
+    .split('\n')
+    .map(p=>p.trim())
+    .filter(Boolean)
+    .slice(0,12)
+    .map(p=>`<p>${escapeHtml(p)}</p>`)
+    .join('');
+
+  body.innerHTML=`${chips}<div class="ai-summary-subtitle">Descrição</div><div class="ai-summary-text">${paragraphs||'<p>Descrição não encontrada.</p>'}</div>`;
+}
+function parseAiText(text){
+  const raw=String(text||'').trim();
+  if(!raw)return null;
+
+  try{return parseAiResponse(JSON.parse(raw));}catch{}
+
+  const genreMatch=raw.match(/g[eê]neros?\s*[:\-]\s*([^\n]+)/i);
+  const genres=genreMatch?cleanGenres(genreMatch[1]):[];
+  let description=raw
+    .replace(/^(#+\s*)?(g[eê]neros?|principais g[eê]neros)\s*[:\-].*$/gim,'')
+    .replace(/^(#+\s*)?(descri[cç][aã]o|sinopse|resumo)\s*[:\-]\s*/gim,'')
+    .trim();
+
+  return {genres,description:description||raw};
+}
+function parseAiResponse(data){
+  if(!data)return null;
+
+  const textObj=typeof data.text==='string'?(()=>{
+    try{return JSON.parse(data.text);}catch{return null;}
+  })():null;
+
+  const src=textObj||data;
+  const genres=cleanGenres(src.genres||src.generos||src['gêneros']);
+  const description=String(src.description||src.descricao||src['descrição']||src.summary||'').trim();
+
+  if(genres.length||description)return{genres,description};
+
+  if(typeof data.text==='string')return parseAiText(data.text);
+  return null;
+}
+function serializeAiInfo(info){
+  const i=normalizeAiInfo(info);
+  return JSON.stringify({
+    type:AI_INFO_TYPE,
+    genres:i?.genres||[],
+    description:i?.description||'',
+    originalGenres:i?.originalGenres||[],
+    originalDescription:i?.originalDescription||'',
+    updatedAt:i?.updatedAt||new Date().toISOString()
+  });
+}
+async function sbSaveAiInfo(itemName,info){
   await sbReq('ai_summaries',{method:'POST',
     headers:{'Prefer':'resolution=merge-duplicates'},
-    body:JSON.stringify({item_name:itemName,summary:text,updated_at:new Date().toISOString()})});
+    body:JSON.stringify({item_name:itemName,summary:serializeAiInfo(info),updated_at:new Date().toISOString()})});
 }
-async function sbLoadSummary(itemName){
-  const rows=await sbReq('ai_summaries?item_name=eq.'+encodeURIComponent(itemName)+'&select=summary&limit=1');
-  return rows&&rows.length>0?rows[0].summary:null;
+async function sbLoadAiInfo(itemName){
+  const rows=await sbReq('ai_summaries?item_name=eq.'+encodeURIComponent(itemName)+'&select=summary,updated_at&limit=1');
+  if(!rows||rows.length===0)return null;
+  const info=normalizeAiInfo(rows[0].summary);
+  if(info&&!info.updatedAt)info.updatedAt=rows[0].updated_at||null;
+  return info;
+}
+async function requestAiInfo(itemName){
+  const resp=await fetch(AI_WORKER_URL,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      itemName,
+      task:'genres_and_detailed_description',
+      mode:'catalog',
+      language:'pt-BR',
+      responseFormat:'json',
+      schema:{
+        genres:'array com exatamente 4 gêneros principais da obra',
+        description:'descrição detalhada em português sobre o título informado'
+      }
+    })
+  });
+
+  if(!resp.ok){const err=await resp.text();throw new Error(err);}
+  const data=await resp.json();
+  const parsed=parseAiResponse(data);
+
+  if(!parsed||(!parsed.genres.length&&!parsed.description)){
+    throw new Error('Resposta da IA não trouxe gêneros nem descrição.');
+  }
+
+  return parsed;
+}
+async function fetchAiInfoForItem(item,list,{auto=false}={}){
+  if(!item||item.aiLoading)return;
+
+  item.aiLoading=true;
+  if(detailItemId===item.id)renderAiInfo(item);
+  if(auto)setStatus('IA gerando...','saving');
+
+  try{
+    const parsed=await requestAiInfo(item.name);
+    const stored=buildStoredAiInfo(parsed,aiInfoFromItem(item));
+    item.aiInfo=stored;
+    item.aiSummary=stored.description; // compatibilidade com dados antigos
+    await sbSaveAiInfo(item.name,stored);
+
+    if(detailItemId===item.id)renderAiInfo(item);
+    renderMain();
+    scheduleSave(list);
+  }catch(err){
+    console.error('AI info error:',err);
+    if(detailItemId===item.id){
+      const body=document.getElementById('dAiBody');
+      if(body)body.innerHTML=`<span class="ai-error">⚠ Erro ao buscar gêneros e descrição. Tente atualizar novamente.</span>`;
+    }
+    if(auto)setStatus('⚠ IA falhou','error');
+  }finally{
+    item.aiLoading=false;
+    if(detailItemId===item.id)renderAiInfo(item);
+  }
 }
 async function fetchAiSummary(){
   const l=aList();const found=findItem(l,detailItemId);if(!found)return;
-  const itemName=found.item.name;
-  const btn=document.getElementById('dAiBtn');
-  const body=document.getElementById('dAiBody');
+  await fetchAiInfoForItem(found.item,l,{auto:false});
+}
+function rewindAiInfo(){
+  const l=aList();const found=findItem(l,detailItemId);if(!found)return;
+  const info=aiInfoFromItem(found.item);if(!canRewindAi(info))return;
 
-  btn.disabled=true;btn.textContent='⏳ Buscando...';
-  body.innerHTML=`<div class="ai-loading"><div class="ai-loading-dots"><span></span><span></span><span></span></div><span>Gerando resumo sobre "${itemName}"...</span></div>`;
+  found.item.aiInfo={
+    type:AI_INFO_TYPE,
+    genres:[...info.originalGenres],
+    description:info.originalDescription,
+    originalGenres:[...info.originalGenres],
+    originalDescription:info.originalDescription,
+    updatedAt:new Date().toISOString()
+  };
+  found.item.aiSummary=found.item.aiInfo.description;
 
-  try{
-    const resp=await fetch('https://tlmf-api.pedropontes9.workers.dev/ai-summary',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({itemName})
-    });
-
-    if(!resp.ok){const err=await resp.text();throw new Error(err);}
-    const data=await resp.json();
-    const text=data.text||'';
-    if(!text.trim()){throw new Error('Nenhum texto retornado.');}
-
-    renderSummary(text,body,btn);
-    found.item.aiSummary=text;
-    await sbSaveSummary(itemName,text);
-
-  }catch(err){
-    console.error('AI Summary error:',err);
-    body.innerHTML=`<span class="ai-error">⚠ Erro ao buscar resumo. Tente novamente.</span>`;
-    btn.textContent='🔍 Buscar';
-  }finally{
-    btn.disabled=false;
-  }
+  renderAiInfo(found.item);
+  sbSaveAiInfo(found.item.name,found.item.aiInfo).catch(err=>console.error('AI rewind save error:',err));
+  scheduleSave(l);
 }
 
 function sortTier(tier){tier.items.sort((a,b)=>(b.rating||0)-(a.rating||0));}
