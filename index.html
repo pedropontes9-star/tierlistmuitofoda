@@ -14,10 +14,11 @@
   body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;position:relative}
 
   /* FUNDO DINAMICO */
-  #bgLayer{position:fixed;inset:0;z-index:0;overflow:hidden;background:var(--bg)}
-  #bgLayer .orbit{position:absolute;top:50%;left:50%;width:0;height:0;animation:bgOrbit linear infinite}
-  @keyframes bgOrbit{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-  #bgLayer .blob{position:absolute;top:0;left:0;filter:blur(4px) saturate(1.15);object-fit:cover;-webkit-mask-image:radial-gradient(circle,#000 42%,transparent 74%);mask-image:radial-gradient(circle,#000 42%,transparent 74%);transition:opacity .6s ease}
+  #bgLayer{position:fixed;inset:0;z-index:0;overflow:hidden;background:var(--bg);display:flex;flex-direction:column}
+  #bgLayer .bgrow{position:relative;flex:1;overflow:hidden;-webkit-mask-image:linear-gradient(to bottom,transparent,#000 28%,#000 72%,transparent);mask-image:linear-gradient(to bottom,transparent,#000 28%,#000 72%,transparent)}
+  #bgLayer .bgtrack{display:flex;align-items:center;gap:16px;position:absolute;left:0;top:50%;height:100%;animation:bgScrollX linear infinite;will-change:transform}
+  @keyframes bgScrollX{from{transform:translateY(-50%) translateX(0)}to{transform:translateY(-50%) translateX(-50%)}}
+  #bgLayer .blob{height:100%;width:auto;flex-shrink:0;border-radius:14px;object-fit:cover;filter:blur(4px) saturate(1.15);transition:opacity .6s ease}
   #bgScrim{position:fixed;inset:0;z-index:1;background:linear-gradient(180deg,rgba(15,15,19,.4),rgba(15,15,19,.72) 70%);pointer-events:none}
   .layout{display:flex;min-height:100vh;position:relative;z-index:2}
 
@@ -431,10 +432,8 @@ const DEF_TIERS = [
   {letter:'E',name:'Fraco',     color:'#B7ADEB'},
   {letter:'F',name:'Ruim',      color:'#E6A8C4'},
 ];
-const BG_ORBIT_COUNT=8;   // quantas capas ficam no anel (repete se tiver menos imagens)
-const BG_ORBIT_RADIUS=30; // vmax
-const BG_ORBIT_SIZE=34;   // vmax
-const BG_ORBIT_DURATION=110; // segundos por volta completa
+const BG_ROWS=3;                    // fileiras horizontais empilhadas pra cobrir a tela
+const BG_ROW_DURATIONS=[75,100,85]; // segundos por volta completa, varia por fileira
 
 let lists=[], activeId=null, editingTierId=null, addingToTierId=null;
 let currentImg=null, saveTimer=null;
@@ -1298,23 +1297,26 @@ function collectBgImages(list){
 function renderBackground(){
   const l=aList();const layer=document.getElementById('bgLayer');if(!layer)return;
   if(!l){layer.innerHTML='';lastBgSignature='';return;}
-  const imgs=collectBgImages(l).slice(0,10);
+  const imgs=collectBgImages(l).slice(0,14);
   const intensity=l.bgIntensity!=null?l.bgIntensity:50;
   const sig=imgs.join('|')+'|'+intensity;
   if(sig===lastBgSignature)return;
   lastBgSignature=sig;
   if(!imgs.length){layer.style.transition='opacity .4s ease';layer.style.opacity='1';layer.innerHTML='';return;}
   const inten=intensity/100;
-  const slots=Math.max(imgs.length,BG_ORBIT_COUNT);
-  const step=360/slots;
+  const opacity=(0.34+inten*0.5).toFixed(2);
+  const perRow=Math.max(imgs.length,6); // repete as imagens se tiver poucas, pra fileira não ficar com buraco
   layer.style.opacity='0';
   setTimeout(()=>{
-    const blobs=Array.from({length:slots},(_,i)=>{
-      const src=imgs[i%imgs.length];const angle=i*step;
-      const t=`rotate(${angle}deg) translate(${BG_ORBIT_RADIUS}vmax) rotate(${-angle}deg) translate(-50%,-50%)`;
-      return `<img class="blob" src="${src}" loading="lazy" onerror="this.style.display='none'" style="width:${BG_ORBIT_SIZE}vmax;height:${BG_ORBIT_SIZE}vmax;opacity:${(0.34+inten*0.5).toFixed(2)};transform:${t}"/>`;
-    }).join('');
-    layer.innerHTML=`<div class="orbit" style="animation-duration:${BG_ORBIT_DURATION}s">${blobs}</div>`;
+    let html='';
+    for(let r=0;r<BG_ROWS;r++){
+      const seq=Array.from({length:perRow},(_,i)=>imgs[(i+r*2)%imgs.length]);
+      const doubled=[...seq,...seq]; // sequencia duplicada = loop sem costura ao andar -50%
+      const dur=BG_ROW_DURATIONS[r%BG_ROW_DURATIONS.length];
+      const items=doubled.map(src=>`<img class="blob" src="${src}" loading="lazy" onerror="this.style.display='none'" style="opacity:${opacity}"/>`).join('');
+      html+=`<div class="bgrow"><div class="bgtrack" style="animation-duration:${dur}s">${items}</div></div>`;
+    }
+    layer.innerHTML=html;
     layer.style.transition='opacity .6s ease';layer.style.opacity='1';
   },160);
 }
