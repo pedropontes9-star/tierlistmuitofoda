@@ -15,8 +15,9 @@
 
   /* FUNDO DINAMICO */
   #bgLayer{position:fixed;inset:0;z-index:0;overflow:hidden;background:var(--bg)}
-  #bgLayer .blob{position:absolute;border-radius:50%;filter:blur(75px);object-fit:cover;animation:bgDrift ease-in-out infinite;transition:opacity .6s ease}
-  @keyframes bgDrift{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(26px,-18px) scale(1.06)}}
+  #bgLayer .orbit{position:absolute;top:50%;left:50%;width:0;height:0;animation:bgOrbit linear infinite}
+  @keyframes bgOrbit{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+  #bgLayer .blob{position:absolute;top:0;left:0;border-radius:50%;filter:blur(70px);object-fit:cover;transition:opacity .6s ease}
   #bgScrim{position:fixed;inset:0;z-index:1;background:linear-gradient(180deg,rgba(15,15,19,.55),rgba(15,15,19,.85) 65%);pointer-events:none}
   .layout{display:flex;min-height:100vh;position:relative;z-index:2}
 
@@ -412,10 +413,10 @@ const DEF_TIERS = [
   {letter:'E',name:'Fraco',     color:'#B7ADEB'},
   {letter:'F',name:'Ruim',      color:'#E6A8C4'},
 ];
-const BG_POS=[
-  {top:'4%',left:'6%',size:360},{top:'10%',left:'58%',size:300},{top:'44%',left:'-6%',size:400},
-  {top:'55%',left:'42%',size:340},{top:'38%',left:'80%',size:280},{top:'70%',left:'12%',size:260}
-];
+const BG_ORBIT_COUNT=8;   // quantas capas ficam no anel (repete se tiver menos imagens)
+const BG_ORBIT_RADIUS=34; // vmax
+const BG_ORBIT_SIZE=28;   // vmax
+const BG_ORBIT_DURATION=110; // segundos por volta completa
 
 let lists=[], activeId=null, editingTierId=null, addingToTierId=null;
 let currentImg=null, saveTimer=null;
@@ -1265,19 +1266,23 @@ function collectBgImages(list){
 function renderBackground(){
   const l=aList();const layer=document.getElementById('bgLayer');if(!layer)return;
   if(!l){layer.innerHTML='';lastBgSignature='';return;}
-  const imgs=collectBgImages(l).slice(0,6);
+  const imgs=collectBgImages(l).slice(0,10);
   const intensity=l.bgIntensity!=null?l.bgIntensity:50;
   const sig=imgs.join('|')+'|'+intensity;
   if(sig===lastBgSignature)return;
   lastBgSignature=sig;
   if(!imgs.length){layer.style.transition='opacity .4s ease';layer.style.opacity='1';layer.innerHTML='';return;}
   const inten=intensity/100;
+  const slots=Math.max(imgs.length,BG_ORBIT_COUNT);
+  const step=360/slots;
   layer.style.opacity='0';
   setTimeout(()=>{
-    layer.innerHTML=imgs.map((src,i)=>{
-      const p=BG_POS[i%BG_POS.length];const dur=18+i*4;
-      return `<img class="blob" src="${src}" style="top:${p.top};left:${p.left};width:${p.size}px;height:${p.size}px;opacity:${(0.28+inten*0.42).toFixed(2)};animation-duration:${dur}s;animation-delay:${-i*3}s"/>`;
+    const blobs=Array.from({length:slots},(_,i)=>{
+      const src=imgs[i%imgs.length];const angle=i*step;
+      const t=`rotate(${angle}deg) translate(${BG_ORBIT_RADIUS}vmax) rotate(${-angle}deg) translate(-50%,-50%)`;
+      return `<img class="blob" src="${src}" loading="lazy" onerror="this.style.display='none'" style="width:${BG_ORBIT_SIZE}vmax;height:${BG_ORBIT_SIZE}vmax;opacity:${(0.28+inten*0.42).toFixed(2)};transform:${t}"/>`;
     }).join('');
+    layer.innerHTML=`<div class="orbit" style="animation-duration:${BG_ORBIT_DURATION}s">${blobs}</div>`;
     layer.style.transition='opacity .6s ease';layer.style.opacity='1';
   },160);
 }
