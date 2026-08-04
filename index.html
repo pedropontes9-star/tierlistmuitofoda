@@ -17,12 +17,12 @@
   #bgLayer{position:fixed;inset:0;z-index:0;overflow:hidden;background:var(--bg)}
   #bgLayer .orbit{position:absolute;top:50%;left:50%;width:0;height:0;animation:bgOrbit linear infinite}
   @keyframes bgOrbit{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-  #bgLayer .blob{position:absolute;top:0;left:0;border-radius:50%;filter:blur(55px) saturate(1.3);object-fit:cover;transition:opacity .6s ease}
-  #bgScrim{position:fixed;inset:0;z-index:1;background:linear-gradient(180deg,rgba(15,15,19,.3),rgba(15,15,19,.62) 70%);pointer-events:none}
+  #bgLayer .blob{position:absolute;top:0;left:0;filter:blur(4px) saturate(1.15);object-fit:cover;-webkit-mask-image:radial-gradient(circle,#000 42%,transparent 74%);mask-image:radial-gradient(circle,#000 42%,transparent 74%);transition:opacity .6s ease}
+  #bgScrim{position:fixed;inset:0;z-index:1;background:linear-gradient(180deg,rgba(15,15,19,.4),rgba(15,15,19,.72) 70%);pointer-events:none}
   .layout{display:flex;min-height:100vh;position:relative;z-index:2}
 
   /* SIDEBAR */
-  .sidebar{width:260px;min-width:260px;background:rgba(26,26,34,.4);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-right:1px solid var(--border);display:flex;flex-direction:column;position:relative;transition:width .25s ease,min-width .25s ease}
+  .sidebar{width:260px;min-width:260px;background:rgba(26,26,34,.5);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-right:1px solid var(--border);display:flex;flex-direction:column;position:relative;transition:width .25s ease,min-width .25s ease}
   .logo-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:20px;border-bottom:1px solid var(--border)}
   .logo{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;line-height:1.2;white-space:nowrap;overflow:hidden}
   .sidebar-toggle{background:rgba(255,255,255,.08);border:1px solid var(--border2);color:var(--text2);width:26px;height:26px;min-width:26px;border-radius:7px;cursor:pointer;font-size:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:all .15s ease}
@@ -82,7 +82,7 @@
   .tier-drawer{display:grid;grid-template-rows:0fr;transition:grid-template-rows .35s cubic-bezier(.2,.8,.3,1)}
   .tier-row.open .tier-drawer{grid-template-rows:1fr}
   .tier-drawer-inner{overflow:hidden}
-  .tier-items{display:flex;flex-wrap:wrap;align-content:flex-start;gap:8px;padding:12px;background:rgba(26,26,34,.3);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);perspective:900px}
+  .tier-items{display:flex;flex-wrap:wrap;align-content:flex-start;gap:8px;padding:12px;background:rgba(26,26,34,.4);backdrop-filter:blur(11px);-webkit-backdrop-filter:blur(11px);perspective:900px}
 
   /* CARDS — trading card + reveal da nota */
   .item-card{width:141px;height:211px;border-radius:12px;overflow:hidden;cursor:pointer;position:relative;flex-shrink:0;background:var(--surface2);border:1.5px solid var(--card-tc,var(--border));transition:transform .15s ease,box-shadow .2s ease;user-select:none;touch-action:manipulation}
@@ -194,7 +194,7 @@
   .url-checking{color:var(--text2)}
 
   /* UNRANKED */
-  .unranked-wrap{background:rgba(26,26,34,.32);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-radius:var(--radius);border:1px solid var(--border);padding:16px}
+  .unranked-wrap{background:rgba(26,26,34,.42);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:var(--radius);border:1px solid var(--border);padding:16px}
   .unranked-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
   .unranked-title{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--text2);font-weight:600}
   .unranked-items{display:flex;flex-wrap:wrap;gap:8px;min-height:80px;padding:4px;border-radius:8px;transition:background .15s;perspective:900px}
@@ -1312,7 +1312,7 @@ function renderBackground(){
     const blobs=Array.from({length:slots},(_,i)=>{
       const src=imgs[i%imgs.length];const angle=i*step;
       const t=`rotate(${angle}deg) translate(${BG_ORBIT_RADIUS}vmax) rotate(${-angle}deg) translate(-50%,-50%)`;
-      return `<img class="blob" src="${src}" loading="lazy" onerror="this.style.display='none'" style="width:${BG_ORBIT_SIZE}vmax;height:${BG_ORBIT_SIZE}vmax;opacity:${(0.4+inten*0.55).toFixed(2)};transform:${t}"/>`;
+      return `<img class="blob" src="${src}" loading="lazy" onerror="this.style.display='none'" style="width:${BG_ORBIT_SIZE}vmax;height:${BG_ORBIT_SIZE}vmax;opacity:${(0.34+inten*0.5).toFixed(2)};transform:${t}"/>`;
     }).join('');
     layer.innerHTML=`<div class="orbit" style="animation-duration:${BG_ORBIT_DURATION}s">${blobs}</div>`;
     layer.style.transition='opacity .6s ease';layer.style.opacity='1';
